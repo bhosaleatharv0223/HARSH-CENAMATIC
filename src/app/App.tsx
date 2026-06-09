@@ -672,7 +672,7 @@ ${paymentScreenshotUrl}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 _Harsh Phalke Films & Photography_
-_harshphalkefilms.com_
+_harsh-films-and-phototgraphy.vercel.app_
 _Automated Booking System_`;
 
       console.log('📝 WhatsApp message built, length:', whatsappMessage.length);
