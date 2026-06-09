@@ -28,8 +28,6 @@ export default function App() {
   const [addons, setAddons] = useState<Set<string>>(new Set());
   const [addonDurations, setAddonDurations] = useState<Map<string, 'full' | 'half'>>(new Map());
   const [addonQuantities, setAddonQuantities] = useState<Map<string, number>>(new Map());
-  const [albumType, setAlbumType] = useState<'small' | 'large' | 'none'>('none');
-  const [albumPages, setAlbumPages] = useState(20);
   const [mobileCinematography, setMobileCinematography] = useState<Set<string>>(new Set());
   const [billItems, setBillItems] = useState<Array<{
     id: string;
@@ -210,7 +208,6 @@ export default function App() {
     { id: 'cine-shoot', name: 'Cinematic Shoot', fullDay: 15000, halfDay: 10000 },
     { id: 'drone', name: 'Drone Shoot', fullDay: 8000, halfDay: 8000 },
     { id: 'screen', name: 'Screen', fullDay: 12000, halfDay: 12000 },
-    { id: 'album-100', name: 'Album 100 Photos', fullDay: 10000, halfDay: 7000 },
     { id: 'trad-edit', name: 'Traditional Video Edit', fullDay: 3000, halfDay: 2000 },
     { id: 'cine-edit', name: 'Cinematic Video Edit (Teaser+Highlight)', fullDay: 6000, halfDay: 6000 },
     { id: 'spot-editor', name: 'Spot Editor', fullDay: 8000, halfDay: 8000, noOptions: true }
@@ -315,13 +312,6 @@ export default function App() {
       if (service) total += service.price;
     });
 
-    // Album
-    if (albumType !== 'none') {
-      const albumPricePerPage = albumType === 'small' ? 70 : 100;
-      const albumCover = albumType === 'small' ? 500 : 700;
-      total += (albumPages * albumPricePerPage) + albumCover;
-    }
-
     return total;
   };
 
@@ -422,11 +412,6 @@ export default function App() {
           selectedServicesList.push(`   • ${service.name} - ₹${service.price.toLocaleString()}`);
         }
       });
-    }
-
-    // Add album selection
-    if (albumType !== 'none') {
-      selectedServicesList.push(`${albumType === 'small' ? '8×24 Small' : '12×36 Large'} Album (${albumPages} pages)`);
     }
 
     // Format the WhatsApp message with all form data
@@ -574,6 +559,8 @@ ${selectedServicesList.map(service => `${service}`).join('\n')}
   const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    console.log('🔥 handleConfirmBooking started');
+
     const errors: Record<string, string> = {};
     if (!formData.fullName?.trim()) errors.fullName = 'Full name is required';
     if (!formData.phone?.trim() || formData.phone.length < 10)
@@ -584,10 +571,12 @@ ${selectedServicesList.map(service => `${service}`).join('\n')}
       errors.location = 'Venue is required';
 
     if (Object.keys(errors).length > 0) {
+      console.log('❌ Validation failed:', errors);
       setFormErrors(errors);
       return;
     }
 
+    console.log('✅ Validation passed');
     setFormErrors({});
     setIsSubmitting(true);
     setSubmitStatus('uploading');
@@ -604,24 +593,43 @@ ${selectedServicesList.map(service => `${service}`).join('\n')}
       // UPLOAD BILL
       let billUrl = 'Bill not generated';
       if (billImageBase64) {
+        console.log('📄 Starting bill upload...');
         setUploadStep('📄 Uploading invoice... please wait');
-        billUrl = await uploadToCloudinary(
-          billImageBase64,
-          `Bill_${clientName}_${dateStr}.jpg`
-        );
+        try {
+          billUrl = await uploadToCloudinary(
+            billImageBase64,
+            `Bill_${clientName}_${dateStr}.jpg`
+          );
+          console.log('✅ Bill uploaded:', billUrl);
+        } catch (billError) {
+          console.error('❌ Bill upload failed:', billError);
+          throw new Error(`Bill upload failed: ${billError.message}`);
+        }
+      } else {
+        console.log('⚠️ No bill image to upload');
       }
 
       // UPLOAD PAYMENT SCREENSHOT
       let paymentScreenshotUrl = 'Not provided';
       if (paymentScreenshotFile) {
+        console.log('📸 Starting payment screenshot upload...');
         setUploadStep('📸 Uploading payment screenshot... please wait');
-        paymentScreenshotUrl = await uploadToCloudinary(
-          paymentScreenshotFile,
-          `Payment_${clientName}_${dateStr}.jpg`
-        );
+        try {
+          paymentScreenshotUrl = await uploadToCloudinary(
+            paymentScreenshotFile,
+            `Payment_${clientName}_${dateStr}.jpg`
+          );
+          console.log('✅ Payment screenshot uploaded:', paymentScreenshotUrl);
+        } catch (paymentError) {
+          console.error('❌ Payment screenshot upload failed:', paymentError);
+          throw new Error(`Payment screenshot upload failed: ${paymentError.message}`);
+        }
+      } else {
+        console.log('⚠️ No payment screenshot to upload');
       }
 
       setUploadStep('📲 Opening WhatsApp...');
+      console.log('📲 Building WhatsApp message...');
 
       const bookingDate = today.toLocaleDateString('en-IN', {
         day: '2-digit',
@@ -667,16 +675,36 @@ _Harsh Phalke Films & Photography_
 _harshphalkefilms.com_
 _Automated Booking System_`;
 
+      console.log('📝 WhatsApp message built, length:', whatsappMessage.length);
+
       const encoded = encodeURIComponent(whatsappMessage);
-      window.open(`https://wa.me/917720049725?text=${encoded}`, '_blank');
+      const whatsappUrl = `https://wa.me/917720049725?text=${encoded}`;
+      
+      console.log('🔗 WhatsApp URL length:', whatsappUrl.length);
+      console.log('🔗 Opening WhatsApp URL...');
+
+      // Try to open WhatsApp
+      const popup = window.open(whatsappUrl, '_blank');
+      
+      if (!popup) {
+        console.error('❌ Pop-up was blocked by browser');
+        toast.error('Pop-up blocked! Please allow pop-ups and try again.');
+        throw new Error('Pop-up blocked by browser');
+      } else {
+        console.log('✅ WhatsApp opened successfully');
+        toast.success('WhatsApp opened! Send the message to complete booking.');
+      }
 
       setSubmitStatus('success');
     } catch (error) {
-      console.error('Booking submission error:', error);
+      console.error('❌ Booking submission error:', error);
       setSubmitStatus('error');
       setUploadError(error instanceof Error
         ? `Upload failed: ${error.message}`
         : 'Upload failed. Check internet and try again.');
+      
+      // Show detailed error to user
+      toast.error(`Booking failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSubmitting(false);
       setUploadStep('');
@@ -1186,52 +1214,6 @@ _Automated Booking System_`;
               ))}
             </div>
           </div>
-
-          {/* Album Packages */}
-          <div className="mb-16">
-            <h3 className="text-2xl font-bold mb-6 text-[#C9A84C]">Album Packages</h3>
-            <div className="grid md:grid-cols-3 gap-6 mb-6">
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                onClick={() => setAlbumType(albumType === 'small' ? 'none' : 'small')}
-                className={`bg-[#1E1E1E] p-8 rounded-lg cursor-pointer border-2 ${albumType === 'small' ? 'border-[#C9A84C]' : 'border-transparent'
-                  }`}
-              >
-                <h4 className="text-2xl font-bold mb-3">8×24 Small Album</h4>
-                <p className="text-[#888888] text-sm mb-3">₹70/page + ₹500 cover</p>
-                {albumType === 'small' && (
-                  <span className="added-badge">Selected</span>
-                )}
-                {albumType === 'small' && <Check className="w-6 h-6 text-[#C9A84C] mt-2" />}
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                onClick={() => setAlbumType(albumType === 'large' ? 'none' : 'large')}
-                className={`bg-[#1E1E1E] p-8 rounded-lg cursor-pointer border-2 ${albumType === 'large' ? 'border-[#C9A84C]' : 'border-transparent'
-                  }`}
-              >
-                <h4 className="text-2xl font-bold mb-3">12×36 Large Album</h4>
-                <p className="text-[#888888] text-sm mb-3">₹100/page + ₹700 cover</p>
-                {albumType === 'large' && (
-                  <span className="added-badge">Selected</span>
-                )}
-                {albumType === 'large' && <Check className="w-6 h-6 text-[#C9A84C] mt-2" />}
-              </motion.div>
-            </div>
-            {albumType !== 'none' && (
-              <div className="bg-[#1E1E1E] p-6 rounded-lg max-w-md">
-                <label className="block mb-3 text-[#CCCCCC]">Number of Pages</label>
-                <input
-                  type="number"
-                  min="10"
-                  max="100"
-                  value={albumPages}
-                  onChange={(e) => setAlbumPages(Number(e.target.value))}
-                  className="w-full bg-[#0A0A0A] border-2 border-[#C9A84C]/30 focus:border-[#C9A84C] rounded-lg px-4 py-3 outline-none transition-colors"
-                />
-              </div>
-            )}
-          </div>
         </div>
       </section>
 
@@ -1288,16 +1270,6 @@ _Automated Booking System_`;
                 </>
               )}
 
-              {albumType !== 'none' && (
-                <>
-                  <h3 className="text-[#C9A84C] font-bold mb-2 mt-4">Album:</h3>
-                  <div className="flex justify-between text-[#CCCCCC]">
-                    <span>{albumType === 'small' ? '8×24 Small' : '12×36 Large'} Album ({albumPages} pages)</span>
-                    <span>₹{((albumPages * (albumType === 'small' ? 70 : 100)) + (albumType === 'small' ? 500 : 700)).toLocaleString()}</span>
-                  </div>
-                </>
-              )}
-
               {mobileCinematography.size > 0 && (
                 <>
                   <h3 className="text-[#C9A84C] font-bold mb-2 mt-4">Mobile Cinematography:</h3>
@@ -1314,7 +1286,7 @@ _Automated Booking System_`;
                 </>
               )}
 
-              {billItems.length === 0 && albumType === 'none' && mobileCinematography.size === 0 && (
+              {billItems.length === 0 && mobileCinematography.size === 0 && (
                 <div className="text-center text-[#888888] py-8">
                   <p>No services selected yet.</p>
                   <p className="text-sm mt-2">Select an event and add-on services above to build your bill.</p>
@@ -1445,12 +1417,6 @@ _Automated Booking System_`;
                       ))}
                     </div>
                   ))}
-                  {albumType !== 'none' && (
-                    <div className="flex justify-between text-[#CCCCCC] mt-4 pt-4 border-t border-[#C9A84C]/20">
-                      <span>Album: {albumType === 'small' ? '8×24 Small' : '12×36 Large'} ({albumPages} pages)</span>
-                      <span>₹{((albumPages * (albumType === 'small' ? 70 : 100)) + (albumType === 'small' ? 500 : 700)).toLocaleString()}</span>
-                    </div>
-                  )}
                   {mobileCinematography.size > 0 && (
                     <div className="mt-4 pt-4 border-t border-[#C9A84C]/20">
                       <h4 className="text-[#C9A84C] font-bold mb-2">Mobile Cinematography:</h4>
@@ -1937,7 +1903,11 @@ _Automated Booking System_`;
                 {/* Confirm Booking Button */}
                 {submitStatus !== 'success' && (
                   <button
-                    onClick={handleConfirmBooking}
+                    onClick={(e) => {
+                      console.log('🔴 BUTTON CLICKED!');
+                      alert('Button clicked! Check console for logs.');
+                      handleConfirmBooking(e);
+                    }}
                     disabled={isSubmitting}
                     style={{
                       width: '100%',
@@ -2031,16 +2001,6 @@ _Automated Booking System_`;
                               ))}
                             </div>
                           ))}
-                        </div>
-                      )}
-
-                      {/* Album Packages */}
-                      {albumType !== 'none' && (
-                        <div style={{ marginTop: '10px' }}>
-                          <div style={{ color: '#C9A84C', fontWeight: '600', marginBottom: '4px' }}>Album Package</div>
-                          <div style={{ color: '#aaa', paddingLeft: '12px' }}>
-                            • {albumType === 'small' ? 'Small Album' : 'Large Album'} — {albumPages} pages — <span style={{ color: '#C9A84C' }}>₹{((albumPages * (albumType === 'small' ? 70 : 100)) + (albumType === 'small' ? 500 : 700)).toLocaleString()}</span>
-                          </div>
                         </div>
                       )}
 
@@ -2169,16 +2129,6 @@ _Automated Booking System_`;
                           ))}
                         </div>
                       ))}
-                    </div>
-                  )}
-
-                  {/* Album Packages */}
-                  {albumType !== 'none' && (
-                    <div style={{ marginTop: '8px' }}>
-                      <div style={{ color: '#C9A84C', fontWeight: '600', marginBottom: '4px' }}>Album Package</div>
-                      <div style={{ color: '#aaa', paddingLeft: '12px' }}>
-                        • {albumType === 'small' ? 'Small Album' : 'Large Album'} — {albumPages} pages — <span style={{ color: '#C9A84C' }}>₹{((albumPages * (albumType === 'small' ? 70 : 100)) + (albumType === 'small' ? 500 : 700)).toLocaleString()}</span>
-                      </div>
                     </div>
                   )}
 
@@ -2911,50 +2861,6 @@ _Automated Booking System_`;
                     </div>
                   )}
 
-                  {/* Album Section */}
-                  {albumType !== 'none' && (
-                    <div style={{ marginBottom: '20px' }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        marginBottom: '8px',
-                        paddingBottom: '8px',
-                        borderBottom: '1px solid #1E1E1E'
-                      }}>
-                        <span style={{ fontSize: '14px' }}>📖</span>
-                        <span style={{
-                          fontSize: '11px',
-                          fontWeight: 'bold',
-                          color: '#C9A84C',
-                          textTransform: 'uppercase',
-                          letterSpacing: '2px'
-                        }}>ALBUM</span>
-                      </div>
-                      <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '8px 0',
-                        borderBottom: '1px dotted #1E1E1E'
-                      }}>
-                        <span style={{
-                          fontSize: '13px',
-                          color: '#E0E0E0'
-                        }}>
-                          {albumType === 'small' ? '8×24 Small' : '12×36 Large'} Album ({albumPages} pages)
-                        </span>
-                        <span style={{
-                          fontSize: '13px',
-                          fontWeight: 'bold',
-                          color: 'white'
-                        }}>
-                          ₹{((albumPages * (albumType === 'small' ? 70 : 100)) + (albumType === 'small' ? 500 : 700)).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Mobile Cinematography Section */}
                   {mobileCinematography.size > 0 && (
                     <div style={{ marginBottom: '20px' }}>
@@ -3006,7 +2912,7 @@ _Automated Booking System_`;
                   )}
 
                   {/* No Services Message */}
-                  {billItems.length === 0 && albumType === 'none' && mobileCinematography.size === 0 && (
+                  {billItems.length === 0 && mobileCinematography.size === 0 && (
                     <div style={{
                       textAlign: 'center',
                       fontSize: '13px',
